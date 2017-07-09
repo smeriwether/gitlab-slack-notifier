@@ -1,0 +1,48 @@
+image: registry.molecule.io/wearemolecule/runners:golang
+
+before_script:
+    - mkdir -p /go/src/gitlab.molecule.io/wearemolecule
+    - ln -s $(pwd) $BUILD_PATH
+
+stages:
+    - build
+    - test
+    - docker_build
+
+cache:
+    paths:
+        - vendor
+
+variables:
+    IMAGE: registry.molecule.io/wearemolecule/gitlab-bot
+    BUILD_PATH: /go/src/gitlab.molecule.io/wearemolecule/gitlab-bot
+
+Build:
+    stage: build
+    script:
+        - cd $BUILD_PATH
+        - make build
+    artifacts:
+        expire_in: 1 week
+        paths:
+            - gitlab-bot
+
+Unit Test:
+    stage: test
+    script:
+        - cd $BUILD_PATH
+        - make test
+
+Docker Build:
+    stage: docker_build
+    image: docker
+    only:
+        - master
+        - tags
+        - branches
+    script:
+        - DOCKER_TAG=$(if [ $CI_BUILD_REF_NAME == 'master' ]; then echo 'latest'; else echo $CI_BUILD_REF_NAME | sed -e 's/\//_/'; fi)
+        - docker build -t $IMAGE:$DOCKER_TAG -f Dockerfile .
+        - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.molecule.io
+        - docker push $IMAGE:$DOCKER_TAG
+        - docker rmi $IMAGE:$DOCKER_TAG
