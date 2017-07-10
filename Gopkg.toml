@@ -36,3 +36,7 @@
 [[constraint]]
   name = "github.com/xanzy/go-gitlab"
   version = "0.5.1"
+
+[[constraint]]
+  name = "github.com/rs/cors"
+  version = "v1.1"

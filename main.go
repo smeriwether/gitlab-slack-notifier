@@ -3,15 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/nlopes/slack"
+	"github.com/rs/cors"
 	gitlab "github.com/xanzy/go-gitlab"
 )
 
@@ -33,6 +36,8 @@ func main() {
 	slackToken := os.Getenv("SLACK_TOKEN")
 	gitlabToken := os.Getenv("GITLAB_TOKEN")
 	activeUsernames := os.Getenv("ACTIVE_USERS")
+	sslKey := os.Getenv("SSL_KEY_PATH")
+	sslCert := os.Getenv("SSL_CERT_PATH")
 
 	if slackClient == nil {
 		if slackToken == "" {
@@ -67,13 +72,62 @@ func main() {
 		}
 	}()
 
+	useSSL := true
+	if _, err := os.Stat(sslKey); os.IsNotExist(err) {
+		log.Println("Unable to find ssl key")
+		useSSL = false
+	}
+	if _, err := os.Stat(sslCert); os.IsNotExist(err) {
+		log.Println("Unable to find ssl certificate")
+		useSSL = false
+	}
+
 	r := mux.NewRouter()
 	r.HandleFunc("/comments", CommentWebhookHandler).Methods("POST")
+	r.HandleFunc("/healthz", HealthzHandler).Methods("GET")
 
 	loggingHandler := handlers.LoggingHandler(os.Stderr, r)
 	authHandler := AuthHandler{loggingHandler}
 
-	log.Println(http.ListenAndServe(":8080", authHandler))
+	handler := http.NewServeMux()
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedHeaders: []string{"accept", "x-csrf-token"},
+	})
+	handler.Handle("/", c.Handler(authHandler))
+
+	tlsServer := &http.Server{
+		Handler:      handler,
+		Addr:         ":9090",
+		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		ErrorLog:     log.New(ioutil.Discard, "Debug: ", log.Ldate|log.Ltime),
+	}
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	go func() {
+		<-sig
+		ticker.Stop()
+		if err := tlsServer.Close(); err != nil {
+			log.Println("Error closing server", err)
+		}
+		log.Println("Exiting...")
+		os.Exit(1)
+
+	}()
+
+	log.Println("Listening for requests on :9090...")
+	if useSSL {
+		log.Fatal(tlsServer.ListenAndServeTLS(sslCert, sslKey))
+	} else {
+		log.Fatal(tlsServer.ListenAndServe())
+	}
+}
+
+func HealthzHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "ok")
 }
 
 func CommentWebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -433,6 +487,12 @@ type AuthHandler struct {
 
 // Gitlab will send a secret token in the header of the response that we can use to verify the request.
 func (h AuthHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Short circuit if just asking about health
+	if req.URL != nil && req.URL.Path == "/healthz" {
+		h.handler.ServeHTTP(w, req)
+		return
+	}
+
 	if token, ok := req.Header["X-Gitlab-Token"]; !ok || token[0] != secretToken {
 		w.WriteHeader(http.StatusUnauthorized)
 		return

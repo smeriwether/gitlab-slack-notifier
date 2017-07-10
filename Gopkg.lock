@@ -32,6 +32,12 @@
   version = "v0.1.0"
 
 [[projects]]
+  name = "github.com/rs/cors"
+  packages = ["."]
+  revision = "8dd4211afb5d08dbb39a533b9bb9e4b486351df6"
+  version = "v1.1"
+
+[[projects]]
   name = "github.com/xanzy/go-gitlab"
   packages = ["."]
   revision = "5b756e2fdc9f21fd4791fa1453b8fe01af0f82e2"
@@ -46,6 +52,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "af837d52859dcf71e515fae156da9671771f8c4b18931e1095b2963172f8a86c"
+  inputs-digest = "49a2786b30ff5402d3ea19c85ed557bddf266fabc5b50fcb4f6c85fbffb08f19"
   solver-name = "gps-cdcl"
   solver-version = 1
