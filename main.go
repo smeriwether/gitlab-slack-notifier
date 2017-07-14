@@ -174,8 +174,9 @@ func CommentWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Don't send in message if the receiver (codeAuthor) is not an active user
-	if !activeUser(codeAuthor) {
+	// Don't send message if the receiver (codeAuthor) is not an active user
+	// Don't send message if the codeAuthor & commentAuthor are the same person (that got annoying)
+	if !activeUser(codeAuthor) || codeAuthor.Same(commentAuthor) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -275,6 +276,14 @@ type User struct {
 	SlackUsername  string
 	GitlabID       int
 	GitlabUsername string
+}
+
+func (u *User) Same(user *User) bool {
+	return u.Email == user.Email ||
+		u.SlackID == user.SlackID ||
+		u.SlackUsername == user.SlackUsername ||
+		u.GitlabID == user.GitlabID ||
+		u.GitlabUsername == user.GitlabUsername
 }
 
 // Gitlab Stuff
