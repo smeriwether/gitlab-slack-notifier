@@ -119,7 +119,128 @@ func TestCommentWebhookHandlerWithInactiveUser(t *testing.T) {
 	if slackStub.receivedMessage != "" {
 		t.Errorf("slack client received wrong message: got %v want (empty)", slackStub.receivedMessage)
 	}
+}
 
+func TestPipelineWebhookHandlerWithAFailedPipeline(t *testing.T) {
+	activeUsers = &[]User{
+		{GitlabUsername: "smeriwether1"},
+	}
+	handler := http.HandlerFunc(PipelineWebhookHandler)
+	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(FailedPiplineRequest()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	slackStub := slackClientStub{}
+	slackClient = &slackStub
+
+	handler.ServeHTTP(rr, req)
+	time.Sleep(1 * time.Second) // Sleep to let goroutines finish, this is a code smell :(
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	if slackStub.receivedChannel != "SLACKID1" {
+		t.Errorf("slack client received wrong channel: got %v want %v",
+			slackStub.receivedChannel, "SLACKID1")
+	}
+
+	if !strings.Contains(slackStub.receivedMessage, "Pipeline failed") {
+		t.Errorf("slack client received wrong message: got %v wanted to include %v",
+			slackStub.receivedMessage, "Pipeline failed")
+	}
+}
+
+func TestPipelineWebhookHandlerWithAFailedPipelineFromAnInactiveUser(t *testing.T) {
+	activeUsers = &[]User{
+		{GitlabUsername: "smeriwether2"},
+	}
+	handler := http.HandlerFunc(PipelineWebhookHandler)
+	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(FailedPiplineRequest()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	slackStub := slackClientStub{}
+	slackClient = &slackStub
+
+	handler.ServeHTTP(rr, req)
+	time.Sleep(1 * time.Second) // Sleep to let goroutines finish, this is a code smell :(
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	if slackStub.receivedChannel == "SLACKID1" {
+		t.Errorf("slack client received wrong channel: got %v wanted (empty)", slackStub.receivedChannel)
+	}
+
+	if slackStub.receivedMessage != "" {
+		t.Errorf("slack client received wrong message: got %v wanted (empty)", slackStub.receivedMessage)
+	}
+}
+
+func TestPipelineWebhookHandlerWithASuccessfulPipeline(t *testing.T) {
+	activeUsers = &[]User{
+		{GitlabUsername: "smeriwether1"},
+	}
+	handler := http.HandlerFunc(PipelineWebhookHandler)
+	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(SucessfulPipelineRequest()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	slackStub := slackClientStub{}
+	slackClient = &slackStub
+
+	handler.ServeHTTP(rr, req)
+	time.Sleep(1 * time.Second) // Sleep to let goroutines finish, this is a code smell :(
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	if slackStub.receivedChannel == "SLACKID1" {
+		t.Errorf("slack client received wrong channel: got %v wanted (empty)", slackStub.receivedChannel)
+	}
+
+	if slackStub.receivedMessage != "" {
+		t.Errorf("slack client received wrong message: got %v wanted (empty)", slackStub.receivedMessage)
+	}
+}
+
+func TestPipelineWebhookHandlerWithARunningPipeline(t *testing.T) {
+	activeUsers = &[]User{
+		{GitlabUsername: "smeriwether1"},
+	}
+	handler := http.HandlerFunc(PipelineWebhookHandler)
+	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(RunningPipelineRequest()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	slackStub := slackClientStub{}
+	slackClient = &slackStub
+
+	handler.ServeHTTP(rr, req)
+	time.Sleep(1 * time.Second) // Sleep to let goroutines finish, this is a code smell :(
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	if slackStub.receivedChannel == "SLACKID1" {
+		t.Errorf("slack client received wrong channel: got %v wanted (empty)", slackStub.receivedChannel)
+	}
+
+	if slackStub.receivedMessage != "" {
+		t.Errorf("slack client received wrong message: got %v wanted (empty)", slackStub.receivedMessage)
+	}
 }
 
 type slackClientStub struct {
@@ -327,6 +448,390 @@ func CommitCommentRequest() []byte {
 			"email": "stephen1@molecule.io"
 			}
 		}
+	}
+	`,
+	)
+}
+
+func RunningPipelineRequest() []byte {
+	return []byte(
+		`
+	{
+		"object_kind": "pipeline",
+		"object_attributes": {
+			"id": 1,
+			"ref": "chore/wip",
+			"tag": false,
+			"sha": "",
+			"before_sha": "",
+			"status": "running",
+			"stages": [
+				"build",
+				"test",
+				"docker_build"
+			],
+			"created_at": "2017-07-15 18:33:26 UTC",
+			"finished_at": null,
+			"duration": null
+		},
+		"user": {
+			"name": "Stephen Meriwether",
+			"username": "smeriwether1",
+			"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+		},
+		"project": {
+			"name": "gitlab-bot",
+			"description": "Gitlab Webhook Bot",
+			"web_url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot",
+			"avatar_url": null,
+			"git_ssh_url": "git@gitlab.molecule.io:wearemolecule/gitlab-bot.git",
+			"git_http_url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot.git",
+			"namespace": "wearemolecule",
+			"visibility_level": 0,
+			"path_with_namespace": "wearemolecule/gitlab-bot",
+			"default_branch": "master"
+		},
+		"commit": {
+			"id": "1",
+			"message": "WIP\n",
+			"timestamp": "2017-07-15T14:33:20-04:00",
+			"url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot/commit/1",
+			"author": {
+				"name": "Stephen Meriwether",
+				"email": "smeriwether714@gmail.com"
+			}
+		},
+		"builds": [
+			{
+				"id": 190887,
+				"stage": "docker_build",
+				"name": "Docker Build",
+				"status": "created",
+				"created_at": "2017-07-15 18:33:27 UTC",
+				"started_at": null,
+				"finished_at": null,
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": null,
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			},
+			{
+				"id": 1,
+				"stage": "test",
+				"name": "Unit Test",
+				"status": "created",
+				"created_at": "2017-07-15 18:33:27 UTC",
+				"started_at": null,
+				"finished_at": null,
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": null,
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			},
+			{
+				"id": 1,
+				"stage": "build",
+				"name": "Build",
+				"status": "running",
+				"created_at": "2017-07-15 18:33:26 UTC",
+				"started_at": "2017-07-15 18:33:27 UTC",
+				"finished_at": null,
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": {
+					"id": 1,
+					"description": "",
+					"active": true,
+					"is_shared": true
+				},
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			}
+		]
+	}
+	`,
+	)
+}
+
+func FailedPiplineRequest() []byte {
+	return []byte(
+		`
+	{
+		"object_kind": "pipeline",
+		"object_attributes": {
+			"id": 1,
+			"ref": "chore/wip",
+			"tag": false,
+			"sha": "",
+			"before_sha": "",
+			"status": "failed",
+			"stages": [
+				"build",
+				"test",
+				"docker_build"
+			],
+			"created_at": "2017-07-15 18:33:26 UTC",
+			"finished_at": "2017-07-15 18:34:17 UTC",
+			"duration": 0
+		},
+		"user": {
+			"name": "Stephen Meriwether",
+			"username": "smeriwether1",
+			"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+		},
+		"project": {
+			"name": "gitlab-bot",
+			"description": "Gitlab Webhook Bot",
+			"web_url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot",
+			"avatar_url": null,
+			"git_ssh_url": "git@gitlab.molecule.io:wearemolecule/gitlab-bot.git",
+			"git_http_url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot.git",
+			"namespace": "wearemolecule",
+			"visibility_level": 0,
+			"path_with_namespace": "wearemolecule/gitlab-bot",
+			"default_branch": "master"
+		},
+		"commit": {
+			"id": "1",
+			"message": "WIP\n",
+			"timestamp": "2017-07-15T14:33:20-04:00",
+			"url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot/commit/1",
+			"author": {
+				"name": "Stephen Meriwether",
+				"email": "smeriwether714@gmail.com"
+			}
+		},
+		"builds": [
+			{
+				"id": 1,
+				"stage": "test",
+				"name": "Unit Test",
+				"status": "failed",
+				"created_at": "2017-07-15 18:33:27 UTC",
+				"started_at": "2017-07-15 18:33:56 UTC",
+				"finished_at": "2017-07-15 18:34:17 UTC",
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": {
+					"id": 18,
+					"description": "",
+					"active": true,
+					"is_shared": true
+				},
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			},
+			{
+				"id": 1,
+				"stage": "docker_build",
+				"name": "Docker Build",
+				"status": "skipped",
+				"created_at": "2017-07-15 18:33:27 UTC",
+				"started_at": null,
+				"finished_at": null,
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": null,
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			},
+			{
+				"id": 1,
+				"stage": "build",
+				"name": "Build",
+				"status": "success",
+				"created_at": "2017-07-15 18:33:26 UTC",
+				"started_at": "2017-07-15 18:33:27 UTC",
+				"finished_at": "2017-07-15 18:33:56 UTC",
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": {
+					"id": 1,
+					"description": "",
+					"active": true,
+					"is_shared": true
+				},
+				"artifacts_file": {
+					"filename": "artifacts.zip",
+					"size": 2525265
+				}
+			}
+		]
+	}
+	`,
+	)
+}
+
+func SucessfulPipelineRequest() []byte {
+	return []byte(
+		`
+	{
+		"object_kind": "pipeline",
+		"object_attributes": {
+			"id": 1,
+			"ref": "chore/wip",
+			"tag": false,
+			"sha": "",
+			"before_sha": "",
+			"status": "success",
+			"stages": [
+				"build",
+				"test",
+				"docker_build"
+			],
+			"created_at": "2017-07-15 18:24:38 UTC",
+			"finished_at": "2017-07-15 18:26:00 UTC",
+			"duration": 0
+		},
+		"user": {
+			"name": "Stephen Meriwether",
+			"username": "smeriwether1",
+			"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+		},
+		"project": {
+			"name": "gitlab-bot",
+			"description": "Gitlab Webhook Bot",
+			"web_url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot",
+			"avatar_url": null,
+			"git_ssh_url": "git@gitlab.molecule.io:wearemolecule/gitlab-bot.git",
+			"git_http_url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot.git",
+			"namespace": "wearemolecule",
+			"visibility_level": 0,
+			"path_with_namespace": "wearemolecule/gitlab-bot",
+			"default_branch": "master"
+		},
+		"commit": {
+			"id": "1",
+			"message": "WIP\n",
+			"timestamp": "2017-07-15T14:24:09-04:00",
+			"url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot/commit/1",
+			"author": {
+				"name": "Stephen Meriwether",
+				"email": "smeriwether714@gmail.com"
+			}
+		},
+		"builds": [
+			{
+				"id": 1,
+				"stage": "docker_build",
+				"name": "Docker Build",
+				"status": "success",
+				"created_at": "2017-07-15 18:24:39 UTC",
+				"started_at": "2017-07-15 18:25:36 UTC",
+				"finished_at": "2017-07-15 18:26:00 UTC",
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": {
+					"id": 1,
+					"description": "",
+					"active": true,
+					"is_shared": true
+				},
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			},
+			{
+				"id": 1,
+				"stage": "test",
+				"name": "Unit Test",
+				"status": "success",
+				"created_at": "2017-07-15 18:24:39 UTC",
+				"started_at": "2017-07-15 18:25:12 UTC",
+				"finished_at": "2017-07-15 18:25:36 UTC",
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": {
+					"id": 1,
+					"description": "",
+					"active": true,
+					"is_shared": true
+				},
+				"artifacts_file": {
+					"filename": null,
+					"size": null
+				}
+			},
+			{
+				"id": 1,
+				"stage": "build",
+				"name": "Build",
+				"status": "success",
+				"created_at": "2017-07-15 18:24:39 UTC",
+				"started_at": "2017-07-15 18:24:39 UTC",
+				"finished_at": "2017-07-15 18:25:11 UTC",
+				"when": "on_success",
+				"manual": false,
+				"user": {
+					"name": "Stephen Meriwether",
+					"username": "smeriwether1",
+					"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
+				},
+				"runner": {
+					"id": 1,
+					"description": "",
+					"active": true,
+					"is_shared": true
+				},
+				"artifacts_file": {
+					"filename": "artifacts.zip",
+					"size": 2525265
+				}
+			}
+		]
 	}
 	`,
 	)

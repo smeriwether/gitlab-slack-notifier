@@ -84,6 +84,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/comments", CommentWebhookHandler).Methods("POST")
+	r.HandleFunc("/pipeline", PipelineWebhookHandler).Methods("POST")
 	r.HandleFunc("/healthz", HealthzHandler).Methods("GET")
 
 	loggingHandler := handlers.LoggingHandler(os.Stderr, r)
@@ -128,6 +129,70 @@ func main() {
 
 func HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "ok")
+}
+
+func PipelineWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Body == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		if _, err := w.Write([]byte("Body must not be empty")); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Println("Error closing body:", err)
+		}
+	}()
+
+	var root RootRequest
+	if err := json.NewDecoder(r.Body).Decode(&root); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println(err)
+		if _, err := w.Write([]byte(fmt.Sprintf("JSON decoding error: %v", err))); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
+	// This handler *should* only receive pipeline updates but we need to still reject everything else.
+	if !root.PipelineRequest() || !root.Valid() || root.Commit == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		if _, err := w.Write([]byte("Not valid or not a pipline request")); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
+	if !root.FailedPipeline() {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	codeAuthor, _ := discoverUsers(&root)
+	if codeAuthor == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, err := w.Write([]byte("User discovery error")); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
+	// Don't send message if the receiver (codeAuthor) is not an active user
+	if !activeUser(codeAuthor) {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	message := fmt.Sprintf("Pipeline failed for your <%s|Commit>", root.Commit.URL)
+	if root.Project != nil && root.ObjectAttributes.Ref != nil {
+		message += fmt.Sprintf(" (%s/%s)", root.Project.Name, *root.ObjectAttributes.Ref)
+	}
+	go slackClient.PostMessage(codeAuthor.SlackID, message, "")
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func CommentWebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +264,12 @@ func discoverUsers(root *RootRequest) (*User, *User) {
 		for _, user := range *users {
 			if root.ObjectAttributes.AuthorID == user.GitlabID {
 				commentAuthor = user
+			}
+
+			if root.User != nil {
+				if root.User.Username == user.GitlabUsername {
+					codeAuthor = user
+				}
 			}
 
 			if root.MergeRequest != nil {
@@ -297,6 +368,7 @@ type RootRequest struct {
 	ObjectAttributes *ObjectAttributesRequest `json:"object_attributes"`
 	MergeRequest     *MergeRequestRequest     `json:"merge_request"`
 	Commit           *CommitRequest           `json:"commit"`
+	Builds           *[]BuildRequest          `json:"builds"`
 }
 
 func (root *RootRequest) Valid() bool {
@@ -305,6 +377,14 @@ func (root *RootRequest) Valid() bool {
 
 func (root *RootRequest) CommentRequest() bool {
 	return root.ObjectKind == "note"
+}
+
+func (root *RootRequest) PipelineRequest() bool {
+	return root.ObjectKind == "pipeline"
+}
+
+func (root *RootRequest) FailedPipeline() bool {
+	return root.ObjectAttributes.Status != nil && *root.ObjectAttributes.Status == "failed"
 }
 
 type UserRequest struct {
@@ -352,6 +432,11 @@ type ObjectAttributesRequest struct {
 	System       bool           `json:"system"`
 	StDiff       *StDiffRequest `json:"st_diff"`
 	URL          string         `json:"url"`
+	Status       *string        `json:"status"`
+	Stages       *[]string      `json:"stages"`
+	FinishedAt   *string        `json:"finished_at"`
+	Duration     *int           `json:"duration"`
+	Ref          *string        `json:"ref"`
 }
 
 type StDiffRequest struct {
@@ -403,6 +488,19 @@ type AuthorRequest struct {
 	Email string `json:"email"`
 }
 
+type BuildRequest struct {
+	ID         int          `json:"id"`
+	Stage      string       `json:"stage"`
+	Name       string       `json:"name"`
+	Status     string       `json:"status"`
+	CreatedAt  string       `json:"created_at"`
+	StartedAt  string       `json:"started_at"`
+	FinishedAt string       `json:"finished_at"`
+	When       string       `json:"when"`
+	Manual     bool         `json:"manual"`
+	User       *UserRequest `json:"user"`
+}
+
 type GitlabReader interface {
 	ListUsers() (*[]User, error)
 }
@@ -451,14 +549,17 @@ type SlackClient struct {
 }
 
 func (client *SlackClient) PostMessage(channel, message, attachment string) {
+	var attachments []slack.Attachment
+	if attachment != "" {
+		attachments = append(attachments, slack.Attachment{Text: attachment})
+	}
+
 	_, _, err := client.client.PostMessage(
 		channel, message,
 		slack.PostMessageParameters{
-			Username: botName,
-			AsUser:   true,
-			Attachments: []slack.Attachment{
-				{Text: attachment},
-			},
+			Username:    botName,
+			AsUser:      true,
+			Attachments: attachments,
 		},
 	)
 	if err != nil {
