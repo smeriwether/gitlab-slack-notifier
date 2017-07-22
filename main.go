@@ -281,23 +281,16 @@ func discoverUsers(root *RootRequest) (*User, *User) {
 				commentAuthor = user
 			}
 
-			if root.User != nil {
-				if root.User.Username == user.GitlabUsername {
-					codeAuthor = user
-				}
-			}
-
 			if root.MergeRequest != nil {
 				if root.MergeRequest.AuthorID == user.GitlabID {
 					codeAuthor = user
 				}
-			}
-
-			if root.Commit != nil {
+			} else if root.Commit != nil {
 				if root.Commit.Author.Email == user.Email {
 					codeAuthor = user
 				}
 			}
+
 		}
 
 		return &codeAuthor, &commentAuthor

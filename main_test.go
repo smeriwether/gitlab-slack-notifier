@@ -126,7 +126,7 @@ func TestPipelineWebhookHandlerWithAFailedPipeline(t *testing.T) {
 		{GitlabUsername: "smeriwether1"},
 	}
 	handler := http.HandlerFunc(PipelineWebhookHandler)
-	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(FailedPiplineRequest()))
+	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(FailedPipelineRequest()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestPipelineWebhookHandlerWithAFailedPipelineFromAnInactiveUser(t *testing.
 		{GitlabUsername: "smeriwether2"},
 	}
 	handler := http.HandlerFunc(PipelineWebhookHandler)
-	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(FailedPiplineRequest()))
+	req, err := http.NewRequest("POST", "/pipeline", bytes.NewBuffer(FailedPipelineRequest()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +576,7 @@ func RunningPipelineRequest() []byte {
 	)
 }
 
-func FailedPiplineRequest() []byte {
+func FailedPipelineRequest() []byte {
 	return []byte(
 		`
 	{
@@ -599,7 +599,7 @@ func FailedPiplineRequest() []byte {
 		},
 		"user": {
 			"name": "Stephen Meriwether",
-			"username": "smeriwether1",
+			"username": "smeriwether2",
 			"avatar_url": "/uploads/system/user/avatar/5/avatar.png"
 		},
 		"project": {
@@ -621,7 +621,7 @@ func FailedPiplineRequest() []byte {
 			"url": "https://gitlab.molecule.io/wearemolecule/gitlab-bot/commit/1",
 			"author": {
 				"name": "Stephen Meriwether",
-				"email": "smeriwether714@gmail.com"
+				"email": "stephen1@molecule.io"
 			}
 		},
 		"builds": [
