@@ -57,13 +57,19 @@ func main() {
 		usernames := strings.Split(activeUsernames, ",")
 		var internalActiveUsernames []User
 		for _, username := range usernames {
+			if username == "" {
+				continue
+			}
 			internalActiveUsernames = append(internalActiveUsernames, User{GitlabUsername: username})
 		}
 		activeUsers = &internalActiveUsernames
+		if activeUsers == nil || len(*activeUsers) == 0 {
+			panic("ACTIVE_USERS must not be empty")
+		}
 	}
 
 	// Every so often we should double check the gitlab & slack users
-	ticker := time.NewTicker(time.Minute * 60)
+	ticker := time.NewTicker(time.Minute * 180)
 	defer ticker.Stop()
 	go func() {
 		go populateUsers()
@@ -89,13 +95,14 @@ func main() {
 
 	loggingHandler := handlers.LoggingHandler(os.Stderr, r)
 	authHandler := AuthHandler{loggingHandler}
+	errorHandler := ErrorHandler{authHandler}
 
 	handler := http.NewServeMux()
 	c := cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedHeaders: []string{"accept", "x-csrf-token"},
 	})
-	handler.Handle("/", c.Handler(authHandler))
+	handler.Handle("/", c.Handler(errorHandler))
 
 	tlsServer := &http.Server{
 		Handler:      handler,
@@ -239,9 +246,14 @@ func CommentWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("%s made a comment on %s MR\n", commentAuthor.GitlabUsername, codeAuthor.GitlabUsername)
+
 	// Don't send message if the receiver (codeAuthor) is not an active user
 	// Don't send message if the codeAuthor & commentAuthor are the same person (that got annoying)
 	if !activeUser(codeAuthor) || codeAuthor.Same(commentAuthor) {
+		log.Println("Ignoring the comment")
+		log.Printf("User is not active: %v\n", !activeUser(codeAuthor))
+		log.Printf("Code author is also the comment author: %v\n", codeAuthor.Same(commentAuthor))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -250,6 +262,9 @@ func CommentWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		"%s made a comment on your <%s|Merge Request>",
 		commentAuthor.GitlabUsername, root.ObjectAttributes.URL,
 	)
+
+	log.Println("Sending slack message")
+	log.Println(message)
 
 	go slackClient.PostMessage(codeAuthor.SlackID, message, root.ObjectAttributes.Note)
 
@@ -609,4 +624,41 @@ func (h AuthHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	h.handler.ServeHTTP(w, req)
+}
+
+type ErrorHandler struct {
+	handler http.Handler
+}
+
+func (h ErrorHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	responseWriter := MyAwesomeResponseWriter{ResponseWriter: w}
+	h.handler.ServeHTTP(&responseWriter, req)
+	if responseWriter.Error() {
+		log.Printf("Returning status code %d\n", responseWriter.StatusCode)
+		log.Printf("Error: %s\n", responseWriter.Text)
+	}
+}
+
+type MyAwesomeResponseWriter struct {
+	StatusCode     int
+	Text           string
+	ResponseWriter http.ResponseWriter
+}
+
+func (w MyAwesomeResponseWriter) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
+func (w *MyAwesomeResponseWriter) Write(bytes []byte) (int, error) {
+	w.Text = string(bytes)
+	return w.ResponseWriter.Write(bytes)
+}
+
+func (w *MyAwesomeResponseWriter) WriteHeader(statusCode int) {
+	w.StatusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *MyAwesomeResponseWriter) Error() bool {
+	return w.StatusCode > 399
 }
