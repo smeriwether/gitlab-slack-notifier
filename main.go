@@ -187,8 +187,11 @@ func PipelineWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Found a failed pipeline for %s\n", codeAuthor.GitlabUsername)
+
 	// Don't send message if the receiver (codeAuthor) is not an active user
 	if !activeUser(codeAuthor) {
+		log.Printf("Not reporting because %s is not active\n", codeAuthor.GitlabUsername)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
