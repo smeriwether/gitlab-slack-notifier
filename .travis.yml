@@ -1,0 +1,12 @@
+language: go
+go:
+ - 1.8.1
+ - tip
+
+install:
+ - go get -u github.com/golang/dep/cmd/dep
+ - make install
+
+script:
+ - go get -u github.com/golang/dep/cmd/dep
+ - make test
